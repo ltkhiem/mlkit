@@ -1,0 +1,160 @@
+import mlflow
+import mlflow.sklearn
+import random
+
+from sklearn.pipeline import Pipeline
+from sklearn.model_selection import StratifiedShuffleSplit, LeaveOneGroupOut
+from sklearn.metrics import accuracy_score, roc_auc_score
+
+from mlkit.classification.models import _all_clfs
+from mlkit.classification.classifier_switcher import ClassifierSwitcher
+
+
+random.seed = 64
+
+class Experiment():
+    def __init__(self, 
+            experiment_name,
+            data,
+            target,
+            ignore_features = None,
+            mlflow_uri = './',
+            data_splitter = 'sss',
+            stratify_features = None,
+            stratify_splits = 10, 
+            stratify_test_size = 0.2,
+            group_features = None,
+            transformation = False,
+            transformation_method = None,
+            normalisation = False,
+            normalisation_method = None,
+            feature_selection = False,
+            feature_selection_method = None,
+            classifiers = 'all',
+            random_state = 64
+    ):
+
+        mlflow.set_tracking_uri(mlflow_uri)
+        mlflow.sklearn.autolog(log_post_training_metrics=False)
+        self._load_experiment(experiment_name)
+
+        self.data = data
+        self.target = target
+        self.ignore_features = ignore_features
+
+
+        self.transformation = transformation
+        self.normalisation = normalisation
+        self.feature_selection = feature_selection
+
+
+        if classifiers == 'all':
+            self.classifiers = _all_clfs.keys()
+        else:
+            self.classifiers = classifiers 
+
+        self.data_splitter = data_splitter
+        if self.data_splitter == 'sss':
+            if stratify_features is None:
+                stratify_features = target
+            self._splitter = StratifiedShuffleSplit(n_splits=stratify_splits, 
+                                                        test_size=stratify_test_size,
+                                                        random_state=random_state)
+        elif self.data_splitter == 'logo':
+            assert group_features is not None, "'groups' has to be specified to use \
+                                             Leave One Group Out split."
+            self._splitter = LeaveOneGroupOut()
+            self.group_features = group_features
+
+
+
+        self.random_state = random_state
+
+        self._gen_pipeline() 
+
+    def _load_experiment(self, experiment_name):
+        expm = mlflow.get_experiment_by_name(experiment_name)
+        if expm is not None:
+            confirm = input(f"Experiment {experiment_name} exists. Press Enter to \
+                    continue, type 'quit' to abort operation.")
+            if confirm == '': 
+                self.exp_id = dict(expm)['experiment_id']
+                return
+            raise Exception("Experiment exists")
+
+        self.exp_id = mlflow.create_experiment(experiment_name)
+
+    def _prepare_data(self):
+        y = self.data[self.target]
+        X = self.data.loc[:, self.data.columns != self.target]
+        if self.ignore_features is not None:
+            X = X.loc[:, ~X.columns.isin(self.ignore_features)]
+        return X.to_numpy(), y.to_numpy()
+
+
+    def _gen_splits(self, X, y): 
+        if self.data_splitter == 'sss':
+            return self._splitter.split(X, y)
+        elif data_splitter == 'logo':
+            return self._splitter.split(X, y, self.group_features)
+
+
+    def _gen_pipeline(self):
+        steps = []
+        if self.transformation:
+            steps.append(('transform', self.transformation_method))
+        
+        if self.normalisation:
+            steps.append(('normalise', self.normalisation_method))
+
+        if self.feature_selection:
+            steps.append(('feat_select', self.feature_selection_method))
+
+        steps.append(('classify', ClassifierSwitcher())) 
+
+        self.pipe = Pipeline(steps) 
+        
+
+    def _check_active_run(self):
+        """
+        Have to implement this properly
+        """
+        mlflow.end_run()
+
+    def eval_and_log_metrics(self, model, X, y_true, prefix):
+        y_pred = model.predict(X)
+        y_proba = model.predict_proba(X)
+
+        acc = accuracy_score(y_true, y_pred)
+        auc_ovr = roc_auc_score(y_true, y_proba, multi_class='ovr')
+        auc_ovo = roc_auc_score(y_true, y_proba, multi_class='ovo')
+
+        metrics = {
+            prefix+'acc': acc,
+            prefix+'auc_ovr': auc_ovr,
+            prefix+'auc_ovo': auc_ovo,
+        }
+        mlflow.log_metrics(metrics)
+        return metrics
+
+    def run(self):
+        self._check_active_run()
+        X, y = self._prepare_data()
+
+        for clf in self.classifiers: 
+            print("Fitting ", clf)
+            params = _all_clfs[clf]
+            self.pipe.set_params(**params) 
+
+            for train_index, validate_index in self._gen_splits(X, y):
+                with mlflow.start_run(experiment_id = self.exp_id):
+                    X_train, X_val = X[train_index], X[validate_index]
+                    y_train, y_val = y[train_index], y[validate_index]
+
+                    self.pipe.fit(X_train, y_train)
+                    self.eval_and_log_metrics(self.pipe, 
+                            X_val, y_val, prefix='val_')
+
+         
+
+
