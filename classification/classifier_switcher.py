@@ -15,5 +15,8 @@ class ClassifierSwitcher(BaseEstimator):
     def predict_proba(self, X):
         return self.estimator.predict_proba(X)
 
+    def decision_function(self, X):
+        return self.estimator.decision_function(X)
+
     def score(self, X, y):
         return self.estimator.score(X, y)

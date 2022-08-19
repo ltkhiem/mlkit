@@ -2,6 +2,7 @@ import mlflow
 import mlflow.sklearn
 import random
 import pandas as pd
+import numpy as np
 
 from sklearn.pipeline import Pipeline
 from sklearn.model_selection import StratifiedShuffleSplit, LeaveOneGroupOut
@@ -129,7 +130,13 @@ class Experiment():
 
     def eval_and_log_metrics(self, model, X, y_true, prefix):
         y_pred = model.predict(X)
-        y_proba = model.predict_proba(X)
+        try:
+            y_proba = model.predict_proba(X)
+        except:
+            d = model.decision_function(X)
+            y_proba = np.array([np.exp(d[x])/np.sum(np.exp(d[x]))
+                for x in range(d.shape[0])])
+        
 
         acc = accuracy_score(y_true, y_pred)
         auc_ovr = roc_auc_score(y_true, y_proba, multi_class='ovr')
