@@ -1,6 +1,7 @@
 import mlflow
 import mlflow.sklearn
 import random
+import pandas as pd
 
 from sklearn.pipeline import Pipeline
 from sklearn.model_selection import StratifiedShuffleSplit, LeaveOneGroupOut
@@ -21,7 +22,7 @@ class Experiment():
             mlflow_uri = './',
             data_splitter = 'sss',
             stratify_features = None,
-            stratify_splits = 10, 
+            stratify_splits = 2, 
             stratify_test_size = 0.2,
             group_features = None,
             transformation = False,
@@ -44,6 +45,10 @@ class Experiment():
 
 
         self.transformation = transformation
+        if self.transformation is not None:
+            assert transformation_method, "Please specified transformation method"
+            self.transformation_method = transformation_method
+
         self.normalisation = normalisation
         self.feature_selection = feature_selection
 
@@ -121,6 +126,7 @@ class Experiment():
         """
         mlflow.end_run()
 
+
     def eval_and_log_metrics(self, model, X, y_true, prefix):
         y_pred = model.predict(X)
         y_proba = model.predict_proba(X)
@@ -137,23 +143,49 @@ class Experiment():
         mlflow.log_metrics(metrics)
         return metrics
 
+
+    def gen_run_summary(self, all_metrics):
+        df = pd.DataFrame(all_metrics)
+        df = df.describe()
+        for c in df.columns:
+            for x in ['mean', 'std']:
+                mlflow.log_metric(f'{c}_{x}', df[c].loc[x])
+
+
     def run(self):
         self._check_active_run()
         X, y = self._prepare_data()
 
         for clf in self.classifiers: 
-            print("Fitting ", clf)
-            params = _all_clfs[clf]
-            self.pipe.set_params(**params) 
+            with mlflow.start_run(
+                run_name=clf,
+                experiment_id=self.exp_id,
+            ) as parent_run:
+                mlflow.log_param("parent", "yes")
+                params = _all_clfs[clf]
+                self.pipe.set_params(**params) 
 
-            for train_index, validate_index in self._gen_splits(X, y):
-                with mlflow.start_run(experiment_id = self.exp_id):
-                    X_train, X_val = X[train_index], X[validate_index]
-                    y_train, y_val = y[train_index], y[validate_index]
+                all_metrics = []
 
-                    self.pipe.fit(X_train, y_train)
-                    self.eval_and_log_metrics(self.pipe, 
-                            X_val, y_val, prefix='val_')
+                for train_index, validate_index in self._gen_splits(X, y):
+                    with mlflow.start_run(
+                        experiment_id=self.exp_id,
+                        nested=True,
+                    ) as child_run:
+                        mlflow.log_param("child", "yes")
+                        X_train, X_val = X[train_index], X[validate_index]
+                        y_train, y_val = y[train_index], y[validate_index]
+
+                        self.pipe.fit(X_train, y_train)
+                        metrics = self.eval_and_log_metrics(self.pipe, 
+                                X_val, y_val, prefix='val_')
+                        all_metrics.append(metrics)
+
+                self.gen_run_summary(all_metrics)
+
+
+
+
 
          
 
