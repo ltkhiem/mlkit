@@ -19,6 +19,8 @@ class Experiment():
             experiment_name,
             data,
             target,
+            test_data = None,
+            use_features = None,
             ignore_features = None,
             mlflow_uri = './',
             experiment_exists_ok = False,
@@ -43,8 +45,13 @@ class Experiment():
         self.run_tags = run_tags
 
         self.data = data
+        self.data.reset_index(drop=True, inplace=True)
+        self.test_data = test_data
+        if self.test_data is not None:
+            self.test_data.reset_index(drop=True, inplace=True)
         self.target = target
         self.ignore_features = ignore_features
+        self.use_features = use_features
 
 
         self.transformation = transformation
@@ -72,6 +79,8 @@ class Experiment():
             self._splitter = LeaveOneGroupOut()
             self.group_features = group_features
             self.data_groups = data[group_features].values
+            if self.test_data is not None:
+                self.test_data_groups = test_data[group_features].values
 
 
 
@@ -94,11 +103,14 @@ class Experiment():
 
         self.exp_id = mlflow.create_experiment(experiment_name)
 
-    def _prepare_data(self):
-        y = self.data[self.target]
-        X = self.data.loc[:, self.data.columns != self.target]
+    def _prepare_data(self, data):
+        y = data[self.target]
+        X = data.loc[:, data.columns != self.target]
         if self.ignore_features is not None:
             X = X.loc[:, ~X.columns.isin(self.ignore_features)]
+
+        if self.use_features is not None:
+            X = X[self.use_features]
         return X.to_numpy(), y.to_numpy()
 
 
@@ -171,7 +183,8 @@ class Experiment():
 
     def run(self):
         self._check_active_run()
-        X, y = self._prepare_data()
+        X, y = self._prepare_data(self.data)
+        X_test, y_test = self._prepare_data(self.test_data)
 
         for clf in self.classifiers: 
             with mlflow.start_run(
@@ -196,16 +209,29 @@ class Experiment():
                         y_train, y_val = y[train_index], y[validate_index]
 
                         self.pipe.fit(X_train, y_train)
+
+
+                        # Evaluation on validation data
                         metrics = self.eval_and_log_metrics(self.pipe, 
                                 X_val, y_val, prefix='val_')
+
+                        # Evaluation on testing data
+                        if self.test_data is not None: 
+                            if self.data_splitter == 'logo':
+                                _cur_group = self.data_groups[validate_index[0]] 
+                                _group_idx,  = np.where(self.test_data_groups==_cur_group)
+                                metrics.update(self.eval_and_log_metrics(self.pipe, 
+                                        X_test[_group_idx], y_test[_group_idx], prefix='test_'))
+                            else:
+                                metrics.update(self.eval_and_log_metrics(self.pipe, 
+                                        X_test, y_test, prefix='test_'))
+
+
                         all_metrics.append(metrics)
 
                 self.gen_run_summary(all_metrics)
 
 
 
-
-
-         
 
 
