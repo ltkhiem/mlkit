@@ -3,6 +3,7 @@ import mlflow.sklearn
 import random
 import pandas as pd
 import numpy as np
+from tempfile import mkdtemp
 
 from sklearn.pipeline import Pipeline
 from sklearn.model_selection import StratifiedShuffleSplit, LeaveOneGroupOut
@@ -36,7 +37,8 @@ class Experiment():
             feature_selection_method = None,
             classifiers = 'all',
             run_tags = None,
-            random_state = 64
+            random_state = 64,
+            use_cache = True
     ):
 
         mlflow.set_tracking_uri(mlflow_uri)
@@ -85,6 +87,7 @@ class Experiment():
 
 
         self.random_state = random_state
+        self.use_cache = use_cache
 
         self._gen_pipeline() 
 
@@ -134,7 +137,12 @@ class Experiment():
 
         steps.append(('classify', ClassifierSwitcher())) 
 
-        self.pipe = Pipeline(steps) 
+        # Speed-up by caching transformation models.
+        if self.use_cache: 
+            cache_dir = mkdtemp()
+        else:
+            cache_dir = None
+        self.pipe = Pipeline(steps, memory = cache_dir)
         
 
     def _check_active_run(self):
