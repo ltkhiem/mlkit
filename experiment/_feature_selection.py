@@ -1,6 +1,7 @@
 import mlflow
 import mlflow.sklearn 
 from tempfile import mkdtemp
+import plotly.express as px
 
 from sklearn.model_selection import (
     StratifiedShuffleSplit,
@@ -37,7 +38,8 @@ class FeatureSelectionExperiment(BaseExperiment):
             selector = 'rfe',
             run_tags = None,
             random_state = 64,
-            use_cache = True
+            use_cache = True,
+            show_plots = True
     ):
 
         super().__init__(experiment_name,
@@ -61,6 +63,7 @@ class FeatureSelectionExperiment(BaseExperiment):
         self._setup_estimator(estimator)
         self.selector = selector
         self.use_cache = use_cache
+        self.show_plots = show_plots
         self._gen_pipeline() 
 
     def _setup_preprocessing(
@@ -111,6 +114,7 @@ class FeatureSelectionExperiment(BaseExperiment):
         Idea for future: estimator starts with c_ means classifier
                                                r_ means regressor
         """
+        self.estimator = estimator
         self._estimator_params = {}
         _params = _all_clfs[estimator]
         for k, v in _params.items():
@@ -146,7 +150,7 @@ class FeatureSelectionExperiment(BaseExperiment):
         X, y = self._prepare_data(self.data)
 
         with mlflow.start_run(
-            run_name = self.selector,
+            run_name = self.selector + '_' + self.estimator,
             experiment_id = self.exp_id
         ):
             mlflow.set_tags({'selector': self.selector})
@@ -155,7 +159,47 @@ class FeatureSelectionExperiment(BaseExperiment):
 
             self.pipe.fit(X, y)
             
-        feat_selector = self.pipe.named_steps['feature_select']
-        return feat_selector  
+            feat_selector = self.pipe.named_steps['feature_select']
+            self.get_selected_features(feat_selector)
+            self.gen_plots(feat_selector.model)
 
-    
+        return self.selected_features
+
+
+    def get_selected_features(self, feat_selector):
+        self.selected_features = feat_selector.get_feature_names_out(
+                                    input_features = self.feature_names
+                                 )
+        mlflow.log_dict(
+                {"selected_features": list(self.selected_features)},
+                "outputs/selected_features.json"
+            )
+        
+
+    def gen_plots(self, feat_selector):
+        if self.selector == 'rfe':
+            self._gen_feature_selection_summary(feat_selector)
+
+
+    def _gen_feature_selection_summary(self, rfe):
+        fig = px.line(
+            data_frame = {
+                'n_features': range(1, len(rfe.grid_scores_)+1), 
+                'accuracy_score_CV': rfe.grid_scores_,
+            },
+            x = 'n_features',
+            y = 'accuracy_score_CV',
+            title='N Features vs Accuracy Score (CV)',
+            template="simple_white")
+        fig.add_vline(
+                x=rfe.n_features_, 
+                line_width=2, 
+                line_dash="dash", 
+                line_color="red", 
+                annotation_text="Optimal #Features")
+        fig.update_layout(
+                annotations=[{**a, **{"y":.5}}  
+                    for a in fig.to_dict()["layout"]["annotations"]]) 
+        mlflow.log_figure(fig, "plots/feature_selection_summary.html")
+        if self.show_plots:
+            fig.show()
