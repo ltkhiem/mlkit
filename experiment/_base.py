@@ -63,15 +63,21 @@ class BaseExperiment():
         self.ignore_features = ignore_features
         self.use_features = use_features
 
+        if use_features is not None:
+            self.feature_names = np.array(use_features)
+        elif ignore_features is not None:
+            self.feature_names = data.loc[:, 
+                    ~data.columns.isin(
+                        ignore_features+[target]
+                    )].columns.to_numpy()
+        else:
+            self.feature_names = data.loc[:, 
+                    data.columns != target].columns.to_numpy()
+
 
     def _prepare_data(self, data):
         y = data[self.target]
-        X = data.loc[:, data.columns != self.target]
-        if self.ignore_features is not None:
-            X = X.loc[:, ~X.columns.isin(self.ignore_features)]
-
-        if self.use_features is not None:
-            X = X[self.use_features]
+        X = data.loc[:, self.feature_names]
         return X.to_numpy(), y.to_numpy()
 
 
