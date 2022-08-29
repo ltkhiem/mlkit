@@ -4,7 +4,6 @@ class ClassifierSwitcher(BaseEstimator):
     def __init__(self, estimator=None):
         self.estimator = estimator
 
-
     def fit(self, X, y=None, **kwargs): 
         self.estimator.fit(X,y)
         return self
