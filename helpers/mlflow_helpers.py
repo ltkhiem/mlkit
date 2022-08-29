@@ -5,7 +5,7 @@ def load_experiment(experiment_name, exp_exists_ok):
     expm = mlflow.get_experiment_by_name(experiment_name)
     if expm is not None:
         if exp_exists_ok:
-            return = dict(expm)['experiment_id']
+            return dict(expm)['experiment_id']
         else:
             confirm = input(f"Experiment {experiment_name} exists. Press Enter to continue, type 'quit' to abort operation.\n")
             if confirm == '': 
