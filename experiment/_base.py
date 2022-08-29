@@ -23,20 +23,19 @@ class BaseExperiment():
             run_tags = None,
             random_state = 64,
     ):
-        self._setup_mlflow(mlflow_ui,
+        self._setup_mlflow(mlflow_uri,
                 experiment_name,
                 experiment_exists_ok,
                 run_tags)
-        self._setupdat(data,
+        self._setup_data(data,
                 target,
                 test_data,
                 ignore_features,
                 use_features)
         self.random_state = random_state
-        self.use_cache = use_cache
 
 
-    def _set_up_mlflow(self, 
+    def _setup_mlflow(self, 
             mlflow_uri, 
             experiment_name, 
             experiment_exists_ok,
@@ -65,8 +64,19 @@ class BaseExperiment():
         self.use_features = use_features
 
 
+    def _prepare_data(self, data):
+        y = data[self.target]
+        X = data.loc[:, data.columns != self.target]
+        if self.ignore_features is not None:
+            X = X.loc[:, ~X.columns.isin(self.ignore_features)]
+
+        if self.use_features is not None:
+            X = X[self.use_features]
+        return X.to_numpy(), y.to_numpy()
+
+
     @mlflow_hp.check_active_run
     def run(self):
-        pass
+        raise Exception("Abstract method. Not yet implemented")
 
 
