@@ -160,11 +160,21 @@ class FeatureSelectionExperiment(BaseExperiment):
             self.pipe.fit(X, y)
             
             feat_selector = self.pipe.named_steps['feature_select']
+            self.log_metrics(feat_selector.model)
             self.get_selected_features(feat_selector)
             self.gen_plots(feat_selector.model)
 
         return self.selected_features
 
+
+    def log_metrics(self, feat_selector):
+        best_acc = max(feat_selector.grid_scores_)
+        n_feats = feat_selector.n_features_
+        mlflow.log_metrics({
+            'best_acc': best_acc,
+            'n_feats': n_feats
+        })
+    
 
     def get_selected_features(self, feat_selector):
         self.selected_features = feat_selector.get_feature_names_out(
