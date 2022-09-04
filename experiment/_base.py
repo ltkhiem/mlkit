@@ -15,6 +15,7 @@ class BaseExperiment():
             experiment_name,
             data,
             target,
+            target_labels = None,
             test_data = None,
             use_features = None,
             ignore_features = None,
@@ -32,6 +33,7 @@ class BaseExperiment():
                 test_data,
                 ignore_features,
                 use_features)
+        self.target_labels = target_labels
         self.random_state = random_state
 
 

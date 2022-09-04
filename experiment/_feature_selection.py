@@ -211,5 +211,6 @@ class FeatureSelectionExperiment(BaseExperiment):
                 annotations=[{**a, **{"y":.5}}  
                     for a in fig.to_dict()["layout"]["annotations"]]) 
         mlflow.log_figure(fig, "plots/feature_selection_summary.html")
+
         if self.show_plots:
             fig.show()

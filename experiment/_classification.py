@@ -3,11 +3,14 @@ import mlflow.sklearn
 import random
 import pandas as pd
 import numpy as np
+import plotly.figure_factory as ff
+import plotly
 from tempfile import mkdtemp
+from pathlib import Path
 
 from sklearn.pipeline import Pipeline
 from sklearn.model_selection import StratifiedShuffleSplit, LeaveOneGroupOut
-from sklearn.metrics import accuracy_score, roc_auc_score
+from sklearn.metrics import accuracy_score, roc_auc_score, confusion_matrix
 
 from mlkit.classification.models import _all_clfs
 from mlkit.classification.classifier_switcher import ClassifierSwitcher
@@ -21,6 +24,7 @@ class ClassificationExperiment(BaseExperiment):
             experiment_name,
             data,
             target,
+            target_labels = None,
             test_data = None,
             use_features = None,
             ignore_features = None,
@@ -40,16 +44,17 @@ class ClassificationExperiment(BaseExperiment):
             use_cache = True
     ):
 
-        super().__init__(experiment_name,
-                data,
-                target,
-                test_data,
-                use_features,
-                ignore_features,
-                mlflow_uri,
-                experiment_exists_ok,
-                run_tags,
-                random_state)
+        super().__init__(experiment_name=experiment_name,
+                data=data,
+                target=target,
+                target_labels=target_labels,
+                test_data=test_data,
+                use_features=use_features,
+                ignore_features=ignore_features,
+                mlflow_uri=mlflow_uri,
+                experiment_exists_ok=experiment_exists_ok,
+                run_tags=run_tags,
+                random_state=random_state)
 
         self._setup_preprocessing(transformation,
                 transformation_method,
@@ -158,6 +163,7 @@ class ClassificationExperiment(BaseExperiment):
 
 
         acc = accuracy_score(y_true, y_pred)
+        cfm = confusion_matrix(y_true, y_pred)
         auc_ovr = roc_auc_score(y_true, y_proba, multi_class='ovr')
         auc_ovo = roc_auc_score(y_true, y_proba, multi_class='ovo')
 
@@ -167,7 +173,50 @@ class ClassificationExperiment(BaseExperiment):
             prefix+'auc_ovo': auc_ovo,
         }
         mlflow.log_metrics(metrics)
+        self.plot_and_log_confusion_matrix(cfm)
+
         return metrics
+
+    def plot_and_log_confusion_matrix(self, cfm):
+        if self.target_labels is not None:
+            kwargs = {
+                    "x": self.target_labels,
+                    "y": self.target_labels,
+            }
+        else:
+            kwargs = {}
+
+        cfm_text = [[str(y) for y in x] for x in cfm]
+
+        fig = ff.create_annotated_heatmap(cfm, annotation_text=cfm_text, colorscale='Dense', **kwargs)
+        fig.update_layout(title_text='<b>Confusion matrix</b>')
+        fig.add_annotation(dict(font=dict(color="black",size=14),
+                                x=0.5,
+                                y=-0.15,
+                                showarrow=False,
+                                text="Predicted value",
+                                xref="paper",
+                                yref="paper"))
+        fig.add_annotation(dict(font=dict(color="black",size=14),
+                                x=-0.35,
+                                y=0.5,
+                                showarrow=False,
+                                text="Real value",
+                                textangle=-90,
+                                xref="paper",
+                                yref="paper"))
+
+        fig.update_layout(margin=dict(t=50, l=200), width=800, height=600)
+        fig['data'][0]['showscale'] = True
+        fig['layout']['yaxis']['autorange'] = "reversed"
+
+        mlflow.log_figure(fig, "plots/confusion_matrix.html")
+        mlflow.log_dict(plotly.io.to_json(fig), "outputs/_px_confusion_matrix.json")
+
+        cfm_path = Path(self.cache_dir) / 'confusion_matrix.npy'
+        np.save(open(cfm_path, 'wb'), cfm) 
+        mlflow.log_artifact(cfm_path, "metrics")
+        
 
 
     def gen_run_summary(self, all_metrics):
