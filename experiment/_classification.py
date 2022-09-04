@@ -129,12 +129,16 @@ class ClassificationExperiment(BaseExperiment):
         steps.append(('classify', ClassifierSwitcher())) 
 
         # Speed-up by caching transformation models.
-        if self.use_cache: 
-            cache_dir = mkdtemp()
-        else:
-            cache_dir = None
-        self.pipe = Pipeline(steps, memory = cache_dir)
+        self.cache_dir = mkdtemp()
+        kwargs = {"memory":self.cache_dir} if self.use_cache else {}
+        self.pipe = Pipeline(steps, **kwargs)
         
+
+    def log_train_val_index(self, train_index, test_index):
+        mlflow.log_dict({
+            "train_index": train_index,
+            "val_index": test_index,
+        }, "outputs/train_val_index.json")
 
 
     def eval_and_log_metrics(self, model, X, y_true, prefix):
@@ -176,7 +180,8 @@ class ClassificationExperiment(BaseExperiment):
 
     def run(self):
         X, y = self._prepare_data(self.data)
-        X_test, y_test = self._prepare_data(self.test_data)
+        if self.test_data is not None:
+            X_test, y_test = self._prepare_data(self.test_data)
 
         for clf in self.classifiers: 
             with mlflow.start_run(
