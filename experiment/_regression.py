@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 from sklearn.pipeline import Pipeline
-from sklearn.model_selection import StratifiedShuffleSplit, LeaveOneGroupOut
+from sklearn.model_selection import ShuffleSplit, LeaveOneGroupOut
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from scipy.stats import spearmanr
 
@@ -32,9 +32,9 @@ class RegressionExperiment(BaseExperiment):
             ignore_features = None,
             mlflow_uri = './',
             experiment_exists_ok = False,
-            data_splitter = 'sss',
-            stratify_splits = 3,
-            stratify_test_size = 0.2,
+            data_splitter = 'ss',
+            n_splits = 3,
+            test_size = 0.2,
             group_features = None,
             transformation = False,
             transformation_method = None,
@@ -65,8 +65,8 @@ class RegressionExperiment(BaseExperiment):
         self._setup_regressors(regressors)
         self._setup_data_splitter(data_splitter, 
                 group_features,
-                stratify_splits,
-                stratify_test_size)
+                n_splits,
+                test_size)
 
         self.use_cache = use_cache
         self._gen_pipeline() 
@@ -100,26 +100,26 @@ class RegressionExperiment(BaseExperiment):
     def _setup_data_splitter(self, 
             data_splitter, 
             group_features,
-            stratify_splits,
-            stratify_test_size,
+            n_splits,
+            test_size,
     ):
         self.data_splitter = data_splitter
-        if self.data_splitter == 'sss':
-            self._splitter = StratifiedShuffleSplit(n_splits=stratify_splits, 
-                                                        test_size=stratify_test_size,
-                                                        random_state=self.random_state)
+        if self.data_splitter == 'ss':
+            self._splitter = ShuffleSplit(n_splits=n_splits, 
+                                                test_size=test_size,
+                                                random_state=self.random_state)
         elif self.data_splitter == 'logo':
             assert group_features is not None, "'groups' has to be specified to use \
                                              Leave One Group Out split."
             self._splitter = LeaveOneGroupOut()
             self.group_features = group_features
-            self.data_groups = data[group_features].values
+            self.data_groups = self.data[group_features].values
             if self.test_data is not None:
-                self.test_data_groups = test_data[group_features].values
+                self.test_data_groups = self.test_data[group_features].values
 
 
     def _gen_splits(self, X, y): 
-        if self.data_splitter == 'sss':
+        if self.data_splitter == 'ss':
             return self._splitter.split(X, y)
         elif self.data_splitter == 'logo':
             return self._splitter.split(X, y, self.data_groups)
