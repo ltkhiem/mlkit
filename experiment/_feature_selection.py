@@ -4,6 +4,7 @@ from tempfile import mkdtemp
 import plotly.express as px
 
 from sklearn.model_selection import (
+    ShuffleSplit,
     StratifiedShuffleSplit,
     LeaveOneGroupOut,
 )
@@ -11,6 +12,7 @@ from sklearn.pipeline import Pipeline
 
 from mlkit.feature_selection import FeatureSelectorSwitcher
 from mlkit.classification.models import _all_clfs
+from mlkit.regression.models import _all_regressors
 from mlkit.feature_selection.selectors import _all_selectors
 
 from ._base import BaseExperiment
@@ -22,6 +24,7 @@ class FeatureSelectionExperiment(BaseExperiment):
             estimator,
             data,
             target,
+            task_type = 'clf',
             test_data = None,
             use_features = None,
             ignore_features = None,
@@ -42,16 +45,16 @@ class FeatureSelectionExperiment(BaseExperiment):
             show_plots = True
     ):
 
-        super().__init__(experiment_name,
-                data,
-                target,
-                test_data,
-                use_features,
-                ignore_features,
-                mlflow_uri,
-                experiment_exists_ok,
-                run_tags,
-                random_state)
+        super().__init__(experiment_name=experiment_name,
+                data=data,
+                target=target,
+                test_data=test_data,
+                use_features=use_features,
+                ignore_features=ignore_features,
+                mlflow_uri=mlflow_uri,
+                experiment_exists_ok=experiment_exists_ok,
+                run_tags=run_tags,
+                random_state=random_state)
         self._setup_preprocessing(transformation,
                 transformation_method,
                 normalisation,
@@ -60,8 +63,8 @@ class FeatureSelectionExperiment(BaseExperiment):
                 group_features,
                 stratify_splits,
                 stratify_test_size)
-        self._setup_estimator(estimator)
-        self.selector = selector
+        self._setup_estimator(estimator, task_type)
+        self.selector = selector + '_' + self.task_type
         self.use_cache = use_cache
         self.show_plots = show_plots
         self._gen_pipeline() 
@@ -106,20 +109,37 @@ class FeatureSelectionExperiment(BaseExperiment):
                                                 group_features = group_features
                                              ),
             }
+        elif self.cv == 'ss':
+            self._cv_params = {
+                'feature_select__model__cv': ShuffleSplit(
+                                                n_splits = stratify_splits,
+                                                test_size = stratify_test_size,
+                                                random_state = self.random_state
+                                            ),
+            }
 
-    def _setup_estimator(self, estimator):
+    def _setup_estimator(self, estimator, task_type):
         """
         Not considering regressor yet. Classifiers only for now.
 
         Idea for future: estimator starts with c_ means classifier
                                                r_ means regressor
         """
+        assert task_type is not None, "Please specify whether it is classfication/regression"
+        self.task_type = task_type
         self.estimator = estimator
         self._estimator_params = {}
-        _params = _all_clfs[estimator]
+        if self.task_type == 'clf':
+            _params = _all_clfs[estimator]
+            _prefix = 'classify__'
+        elif self.task_type == 'reg':
+            _params = _all_regressors[estimator]
+            _prefix = 'regress__'
+
         for k, v in _params.items():
-            nk = k.replace('classify__', 'feature_select__model__')
+            nk = k.replace(_prefix, 'feature_select__model__')
             self._estimator_params[nk] = v
+
 
     def _gen_pipeline(self):
         steps = []
@@ -168,10 +188,10 @@ class FeatureSelectionExperiment(BaseExperiment):
 
 
     def log_metrics(self, feat_selector):
-        best_acc = max(feat_selector.grid_scores_)
+        best_score = max(feat_selector.grid_scores_)
         n_feats = feat_selector.n_features_
         mlflow.log_metrics({
-            'best_acc': best_acc,
+            'best_score': best_score,
             'n_feats': n_feats
         })
     
@@ -187,7 +207,7 @@ class FeatureSelectionExperiment(BaseExperiment):
         
 
     def gen_plots(self, feat_selector):
-        if self.selector == 'rfe':
+        if 'rfe' in self.selector:
             self._gen_feature_selection_summary(feat_selector)
 
 
@@ -195,11 +215,11 @@ class FeatureSelectionExperiment(BaseExperiment):
         fig = px.line(
             data_frame = {
                 'n_features': range(1, len(rfe.grid_scores_)+1), 
-                'accuracy_score_CV': rfe.grid_scores_,
+                'best_score_CV': rfe.grid_scores_,
             },
             x = 'n_features',
-            y = 'accuracy_score_CV',
-            title='N Features vs Accuracy Score (CV)',
+            y = 'best_score_CV',
+            title='N Features vs Score (CV)',
             template="simple_white")
         fig.add_vline(
                 x=rfe.n_features_, 
