@@ -111,9 +111,9 @@ class ClassificationExperiment(BaseExperiment):
                                              Leave One Group Out split."
             self._splitter = LeaveOneGroupOut()
             self.group_features = group_features
-            self.data_groups = data[group_features].values
+            self.data_groups = self.data[group_features].values
             if self.test_data is not None:
-                self.test_data_groups = test_data[group_features].values
+                self.test_data_groups = self.test_data[group_features].values
 
 
     def _gen_splits(self, X, y): 
