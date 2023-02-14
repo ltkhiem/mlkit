@@ -44,7 +44,7 @@ class BaseExperiment():
             run_tags
     ):
         mlflow.set_tracking_uri(mlflow_uri)
-        mlflow.sklearn.autolog(log_post_training_metrics=False)
+        mlflow.sklearn.autolog(log_post_training_metrics=False, silent=True)
         self.exp_id = mlflow_hp.load_experiment(experiment_name, experiment_exists_ok)
         self.run_tags = run_tags
 

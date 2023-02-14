@@ -43,7 +43,7 @@ class RegressionExperiment(BaseExperiment):
             regressors = 'all',
             run_tags = None,
             random_state = 64,
-            use_cache = True
+            use_cache = False
     ):
 
         super().__init__(experiment_name=experiment_name,

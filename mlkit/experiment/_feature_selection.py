@@ -41,7 +41,7 @@ class FeatureSelectionExperiment(BaseExperiment):
             selector = 'rfe',
             run_tags = None,
             random_state = 64,
-            use_cache = True,
+            use_cache = False,
             show_plots = True
     ):
 

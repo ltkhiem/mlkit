@@ -1,12 +1,13 @@
 import mlflow
 import mlflow.sklearn
 import random
+import plotly
 import pandas as pd
 import numpy as np
 import plotly.figure_factory as ff
-import plotly
 from tempfile import mkdtemp
 from pathlib import Path
+from tqdm import tqdm
 
 from sklearn.pipeline import Pipeline
 from sklearn.model_selection import StratifiedShuffleSplit, LeaveOneGroupOut
@@ -41,7 +42,7 @@ class ClassificationExperiment(BaseExperiment):
             classifiers = 'all',
             run_tags = None,
             random_state = 64,
-            use_cache = True
+            use_cache = False
     ):
 
         super().__init__(experiment_name=experiment_name,
@@ -232,7 +233,7 @@ class ClassificationExperiment(BaseExperiment):
         if self.test_data is not None:
             X_test, y_test = self._prepare_data(self.test_data)
 
-        for clf in self.classifiers: 
+        for clf in tqdm(self.classifiers, desc='Classifiers', leave=False): 
             with mlflow.start_run(
                 run_name=clf,
                 experiment_id=self.exp_id,
@@ -246,7 +247,7 @@ class ClassificationExperiment(BaseExperiment):
 
                 all_metrics = []
 
-                for train_index, validate_index in self._gen_splits(X, y):
+                for train_index, validate_index in tqdm(self._gen_splits(X, y), desc='Splits', leave=False):
                     with mlflow.start_run(
                         experiment_id=self.exp_id,
                         nested=True,
