@@ -22,12 +22,14 @@ class BaseExperiment():
             mlflow_uri = './',
             experiment_exists_ok = False,
             run_tags = None,
+            run_params = None,
             random_state = 64,
     ):
         self._setup_mlflow(mlflow_uri,
                 experiment_name,
                 experiment_exists_ok,
-                run_tags)
+                run_tags,
+                run_params)
         self._setup_data(data,
                 target,
                 test_data,
@@ -41,12 +43,14 @@ class BaseExperiment():
             mlflow_uri, 
             experiment_name, 
             experiment_exists_ok,
-            run_tags
+            run_tags,
+            run_params,
     ):
         mlflow.set_tracking_uri(mlflow_uri)
         mlflow.sklearn.autolog(log_post_training_metrics=False, silent=True)
         self.exp_id = mlflow_hp.load_experiment(experiment_name, experiment_exists_ok)
         self.run_tags = run_tags
+        self.run_params = run_params
 
 
     def _setup_data(self,
