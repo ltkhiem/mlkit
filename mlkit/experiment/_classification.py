@@ -41,6 +41,7 @@ class ClassificationExperiment(BaseExperiment):
             normalisation_method = None,
             classifiers = 'all',
             run_tags = None,
+            run_params = None,
             random_state = 64,
             use_cache = False
     ):
@@ -55,6 +56,7 @@ class ClassificationExperiment(BaseExperiment):
                 mlflow_uri=mlflow_uri,
                 experiment_exists_ok=experiment_exists_ok,
                 run_tags=run_tags,
+                run_params=run_params,
                 random_state=random_state)
 
         self._setup_preprocessing(transformation,
@@ -241,6 +243,8 @@ class ClassificationExperiment(BaseExperiment):
                 mlflow.set_tags({'clf': clf})
                 if self.run_tags is not None:
                     mlflow.set_tags(self.run_tags)
+                if self.run_params is not None:
+                    mlflow.log_params(self.run_params)
 
                 params = _all_clfs[clf]
                 self.pipe.set_params(**params) 
