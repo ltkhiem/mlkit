@@ -17,7 +17,6 @@ def load_experiment(experiment_name, exp_exists_ok):
 
 def check_active_run(func):
     def wrapper(*args, **kwargs):
-        print("Decorator working")
         active_run = mlflow.active_run()
         if active_run is not None:
             confirm = input("Run with run_id {active_run.info.run_id} is currently active. Press Enter to continue or type 'quit' to abort operation.\n")

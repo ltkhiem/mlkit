@@ -108,6 +108,7 @@ class RegressionExperiment(BaseExperiment):
             self._splitter = ShuffleSplit(n_splits=n_splits, 
                                                 test_size=test_size,
                                                 random_state=self.random_state)
+            self.test_data_groups = None
         elif self.data_splitter == 'logo':
             assert group_features is not None, "'groups' has to be specified to use \
                                              Leave One Group Out split."
@@ -115,7 +116,11 @@ class RegressionExperiment(BaseExperiment):
             self.group_features = group_features
             self.data_groups = self.data[group_features].values
             if self.test_data is not None:
-                self.test_data_groups = self.test_data[group_features].values
+                if isinstance(self.test_data, pd.DataFrame):
+                    self.test_data_groups = self.test_data[group_features].values
+                elif isinstance(self.test_data, dict):
+                    self.test_data_groups = {k: v[group_features].values 
+                                             for k, v in self.test_data.items()}
 
 
     def _gen_splits(self, X, y): 
@@ -176,11 +181,29 @@ class RegressionExperiment(BaseExperiment):
             for x in ['mean', 'std']:
                 mlflow.log_metric(f'{c}_{x}', df[c].loc[x])
 
+    def eval(self, 
+             X_test, 
+             y_test, 
+             validate_index=None, 
+             test_data_groups=None, 
+             prefix=''
+     ):
+        if self.data_splitter == 'logo':
+            _cur_group = self.data_groups[validate_index[0]] 
+            _group_idx,  = np.where(test_data_groups==_cur_group)
+            return self.eval_and_log_metrics(self.pipe, 
+                    X_test[_group_idx], y_test[_group_idx], prefix=f'test_{prefix}')
+        else:
+            return self.eval_and_log_metrics(self.pipe, 
+                    X_test, y_test, prefix=f'test_{prefix}_')
 
     def run(self):
         X, y = self._prepare_data(self.data)
         if self.test_data is not None:
-            X_test, y_test = self._prepare_data(self.test_data)
+            if isinstance(self.test_data, pd.DataFrame):
+                X_test, y_test = self._prepare_data(self.test_data)
+            elif isinstance(self.test_data, dict):
+                Xy_test = {k: self._prepare_data(v) for k, v in self.test_data.items()}
 
         for reg in self.regressors: 
             with mlflow.start_run(
@@ -211,17 +234,25 @@ class RegressionExperiment(BaseExperiment):
                         metrics = self.eval_and_log_metrics(self.pipe, 
                                 X_val, y_val, prefix='val_')
 
+
+
                         # Evaluation on testing data
                         if self.test_data is not None: 
-                            if self.data_splitter == 'logo':
-                                _cur_group = self.data_groups[validate_index[0]] 
-                                _group_idx,  = np.where(self.test_data_groups==_cur_group)
-                                metrics.update(self.eval_and_log_metrics(self.pipe, 
-                                        X_test[_group_idx], y_test[_group_idx], prefix='test_'))
-                            else:
-                                metrics.update(self.eval_and_log_metrics(self.pipe, 
-                                        X_test, y_test, prefix='test_'))
-
+                            if isinstance(self.test_data, pd.DataFrame):
+                                metrics.update(self.eval(X_test, 
+                                                         y_test, 
+                                                         validate_index, 
+                                                         self.test_data_groups,
+                                                         prefix='test_'))
+                            elif isinstance(self.test_data, dict):
+                                for k, v in Xy_test.items():
+                                    if self.data_splitter=='logo':
+                                        metrics.update(self.eval(*v,
+                                                                 validate_index,
+                                                                 self.test_data_groups[k],
+                                                                 prefix=k))
+                                    else: 
+                                        metrics.update(self.eval(*v, prefix=k))
 
                         all_metrics.append(metrics)
 
