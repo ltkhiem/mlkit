@@ -63,8 +63,17 @@ class BaseExperiment():
         self.data = data
         self.data.reset_index(drop=True, inplace=True)
         self.test_data = test_data
-        if self.test_data is not None:
-            self.test_data.reset_index(drop=True, inplace=True)
+        if test_data is not None:
+            if isinstance(self.test_data, pd.DataFrame): 
+                # single test set
+                self.test_data.reset_index(drop=True, inplace=True)
+            elif isinstance(self.test_data, dict):
+                # multiple test sets
+                for k, v in self.test_data.items():
+                    self.test_data[k] = v.reset_index(drop=True)
+            else:
+                raise TypeError('test_data must be a pandas DataFrame or a dict of pandas DataFrames')
+
         self.target = target
         self.ignore_features = ignore_features
         self.use_features = use_features
@@ -87,8 +96,11 @@ class BaseExperiment():
         return X.to_numpy(), y.to_numpy()
 
 
+    def eval(self, test_data):
+        raise NotImplementedError
+
     @mlflow_hp.check_active_run
     def run(self):
-        raise Exception("Abstract method. Not yet implemented")
+        raise NotImplementedError
 
 
