@@ -2,6 +2,7 @@ import mlflow
 import mlflow.sklearn
 import random
 import plotly
+import inspect
 import pandas as pd
 import numpy as np
 import plotly.figure_factory as ff
@@ -32,6 +33,7 @@ class ClassificationExperiment(BaseExperiment):
             mlflow_uri = './',
             experiment_exists_ok = False,
             data_splitter = 'sss',
+            custom_splitter_kwargs = None,
             stratify_splits = 3,
             stratify_test_size = 0.2,
             group_features = None,
@@ -67,7 +69,8 @@ class ClassificationExperiment(BaseExperiment):
         self._setup_data_splitter(data_splitter, 
                 group_features,
                 stratify_splits,
-                stratify_test_size)
+                stratify_test_size,
+                custom_splitter_kwargs)
 
         self.use_cache = use_cache
         self._gen_pipeline() 
@@ -103,8 +106,15 @@ class ClassificationExperiment(BaseExperiment):
             group_features,
             stratify_splits,
             stratify_test_size,
+            custom_splitter_kwargs = None
     ):
-        self.data_splitter = data_splitter
+        if inspect.isfunction(data_splitter):
+            self._splitter = data_splitter
+            self.data_splitter = 'custom'
+            self.custom_splitter_kwargs = custom_splitter_kwargs
+        else:   
+            self.data_splitter = data_splitter
+
         if self.data_splitter == 'sss':
             self._splitter = StratifiedShuffleSplit(n_splits=stratify_splits, 
                                                         test_size=stratify_test_size,
@@ -128,6 +138,9 @@ class ClassificationExperiment(BaseExperiment):
             return self._splitter.split(X, y)
         elif self.data_splitter == 'logo':
             return self._splitter.split(X, y, self.data_groups)
+        elif self.data_splitter == 'custom':
+            # We also send the training data so that custom splitter can have more context
+            return self._splitter(self.data, X, y, **self.custom_splitter_kwargs)
 
 
     def _gen_pipeline(self):
