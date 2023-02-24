@@ -16,6 +16,7 @@ class BaseExperiment():
             data,
             target,
             target_labels = None,
+            valid_data = None,
             test_data = None,
             use_features = None,
             ignore_features = None,
@@ -32,6 +33,7 @@ class BaseExperiment():
                 run_params)
         self._setup_data(data,
                 target,
+                valid_data,
                 test_data,
                 ignore_features,
                 use_features)
@@ -56,12 +58,14 @@ class BaseExperiment():
     def _setup_data(self,
             data, 
             target,
+            valid_data,
             test_data,
             ignore_features,
             use_features,
     ):
         self.data = data
         self.data.reset_index(drop=True, inplace=True)
+        self.valid_data = valid_data
         self.test_data = test_data
         if test_data is not None:
             if isinstance(self.test_data, pd.DataFrame): 
@@ -73,6 +77,17 @@ class BaseExperiment():
                     self.test_data[k] = v.reset_index(drop=True)
             else:
                 raise TypeError('test_data must be a pandas DataFrame or a dict of pandas DataFrames')
+        
+        if valid_data is not None:
+            if isinstance(self.valid_data, pd.DataFrame): 
+                # single validation set
+                self.valid_data.reset_index(drop=True, inplace=True)
+            elif isinstance(self.valid_data, dict):
+                # multiple validation sets
+                for k, v in self.valid_data.items():
+                    self.valid_data[k] = v.reset_index(drop=True)
+            else:
+                raise TypeError('valid_data must be a pandas DataFrame or a dict of pandas DataFrames')
 
         self.target = target
         self.ignore_features = ignore_features
