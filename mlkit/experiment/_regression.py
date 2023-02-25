@@ -1,3 +1,4 @@
+import inspect
 import mlflow
 import mlflow.sklearn
 import random
@@ -27,12 +28,14 @@ class RegressionExperiment(BaseExperiment):
             data,
             target,
             target_labels = None,
+            valid_data = None,
             test_data = None,
             use_features = None,
             ignore_features = None,
             mlflow_uri = './',
             experiment_exists_ok = False,
             data_splitter = 'ss',
+            custom_splitter_kwargs = None,
             n_splits = 3,
             test_size = 0.2,
             group_features = None,
@@ -42,6 +45,7 @@ class RegressionExperiment(BaseExperiment):
             normalisation_method = None,
             regressors = 'all',
             run_tags = None,
+            run_params = None,
             random_state = 64,
             use_cache = False
     ):
@@ -50,12 +54,14 @@ class RegressionExperiment(BaseExperiment):
                 data=data,
                 target=target,
                 target_labels=target_labels,
+                valid_data=valid_data,
                 test_data=test_data,
                 use_features=use_features,
                 ignore_features=ignore_features,
                 mlflow_uri=mlflow_uri,
                 experiment_exists_ok=experiment_exists_ok,
                 run_tags=run_tags,
+                run_params=run_params,
                 random_state=random_state)
 
         self._setup_preprocessing(transformation,
@@ -96,19 +102,26 @@ class RegressionExperiment(BaseExperiment):
         else:
             self.regressors = regressors 
 
-
     def _setup_data_splitter(self, 
             data_splitter, 
             group_features,
             n_splits,
             test_size,
+            custom_splitter_kwargs = None
     ):
-        self.data_splitter = data_splitter
-        if self.data_splitter == 'ss':
+        self.valid_data_groups = None
+        self.test_data_groups = None
+        if inspect.isfunction(data_splitter):
+            self._splitter = data_splitter
+            self.data_splitter = 'custom'
+            self.custom_splitter_kwargs = custom_splitter_kwargs
+        else:   
+            self.data_splitter = data_splitter
+
+        if self.data_splitter == 'sss':
             self._splitter = ShuffleSplit(n_splits=n_splits, 
-                                                test_size=test_size,
-                                                random_state=self.random_state)
-            self.test_data_groups = None
+                                          test_size=test_size,
+                                          random_state=self.random_state)
         elif self.data_splitter == 'logo':
             assert group_features is not None, "'groups' has to be specified to use \
                                              Leave One Group Out split."
@@ -121,13 +134,26 @@ class RegressionExperiment(BaseExperiment):
                 elif isinstance(self.test_data, dict):
                     self.test_data_groups = {k: v[group_features].values 
                                              for k, v in self.test_data.items()}
+            if self.valid_data is not None:
+                if isinstance(self.valid_data, pd.DataFrame):
+                    self.valid_data_groups = self.valid_data[group_features].values
+                elif isinstance(self.valid_data, dict):
+                    self.valid_data_groups = {k: v[group_features].values
+                                              for k, v in self.valid_data.items()}
 
+        elif self.data_splitter is None:
+            self._splitter = lambda x, y: [(None, None)]
 
     def _gen_splits(self, X, y): 
         if self.data_splitter == 'ss':
             return self._splitter.split(X, y)
         elif self.data_splitter == 'logo':
             return self._splitter.split(X, y, self.data_groups)
+        elif self.data_splitter == 'custom':
+            # We also send the training data so that custom splitter can have more context
+            return self._splitter(self.data, X, y, **self.custom_splitter_kwargs)
+        elif self.data_splitter is None:
+            return self._splitter(X, y)
 
 
     def _gen_pipeline(self):
@@ -205,6 +231,12 @@ class RegressionExperiment(BaseExperiment):
             elif isinstance(self.test_data, dict):
                 Xy_test = {k: self._prepare_data(v) for k, v in self.test_data.items()}
 
+        if self.valid_data is not None:
+            if isinstance(self.valid_data, pd.DataFrame):
+                X_val, y_val = self._prepare_data(self.valid_data)
+            elif isinstance(self.valid_data, dict):
+                Xy_val = {k: self._prepare_data(v) for k, v in self.valid_data.items()}
+
         for reg in self.regressors: 
             with mlflow.start_run(
                 run_name=reg,
@@ -224,17 +256,37 @@ class RegressionExperiment(BaseExperiment):
                         experiment_id=self.exp_id,
                         nested=True,
                     ) as child_run:
-                        X_train, X_val = X[train_index], X[validate_index]
-                        y_train, y_val = y[train_index], y[validate_index]
+                        if train_index is not None and validate_index is not None:
+                            X_train, X_val = X[train_index], X[validate_index]
+                            y_train, y_val = y[train_index], y[validate_index]
+                        else:
+                            X_train, y_train = X, y
 
                         self.pipe.fit(X_train, y_train)
 
+                        metrics = {}
 
                         # Evaluation on validation data
-                        metrics = self.eval_and_log_metrics(self.pipe, 
-                                X_val, y_val, prefix='val_')
-
-
+                        if validate_index is not None:
+                            metrics.update(self.eval_and_log_metrics(self.pipe, 
+                                                    X_val, y_val, prefix='val_'))
+                        else:
+                            if self.valid_data is not None:
+                                if isinstance(self.valid_data, pd.DataFrame):
+                                    metrics.update(self.eval(X_val,
+                                                             y_val,
+                                                             validate_index,
+                                                             self.valid_data_groups,
+                                                             prefix='valid_'))
+                                elif isinstance(self.valid_data, dict):
+                                    for k, v in Xy_val.items():
+                                        if self.data_splitter=='logo':
+                                            metrics.update(self.eval(*v,
+                                                                     validate_index,
+                                                                     self.valid_data_groups[k],
+                                                                     prefix=k))
+                                        else:
+                                            metrics.update(self.eval(*v, prefix=k))
 
                         # Evaluation on testing data
                         if self.test_data is not None: 
