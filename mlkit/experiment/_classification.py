@@ -1,3 +1,4 @@
+import json
 import mlflow
 import mlflow.sklearn
 import random
@@ -246,6 +247,8 @@ class ClassificationExperiment(BaseExperiment):
 
         mlflow.log_figure(fig, "plots/confusion_matrix.html")
         mlflow.log_dict(plotly.io.to_json(fig), "outputs/_px_confusion_matrix.json")
+
+        mlflow.log_dict({"input_features": list(self.feature_names)}, "inputs/features.json")
 
         cfm_path = Path(self.cache_dir) / 'confusion_matrix.npy'
         np.save(open(cfm_path, 'wb'), cfm) 
