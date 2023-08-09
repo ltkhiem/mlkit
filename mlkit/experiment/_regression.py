@@ -197,6 +197,7 @@ class RegressionExperiment(BaseExperiment):
             prefix+'mse': mse,
         }
         mlflow.log_metrics(metrics)
+        mlflow.log_dict({"input_features": list(self.feature_names)}, "inputs/features.json")
         return metrics
 
         
