@@ -246,6 +246,8 @@ class RegressionExperiment(BaseExperiment):
                 mlflow.set_tags({'reg': reg})
                 if self.run_tags is not None:
                     mlflow.set_tags(self.run_tags)
+                if self.run_params is not None:
+                    mlflow.log_params(self.run_params)
 
                 params = _all_regressors[reg]
                 self.pipe.set_params(**params) 
